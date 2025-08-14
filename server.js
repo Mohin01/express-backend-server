@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const pool = require('./database');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -26,32 +27,41 @@ app.get('/api/health', (req, res) => {
     });
 });
 
-app.get('/api/users', (req, res) => {
-    // Example API endpoint
-    const users = [
-        { id: 1, name: 'John Doe', email: 'john@example.com' },
-        { id: 2, name: 'Jane Smith', email: 'jane@example.com' },
-        { id: 3, name: 'Bob Johnson', email: 'bob@example.com' }
-    ];
-    res.json(users);
+app.get('/api/users', async (req, res) => {
+    try {
+        console.log('🔍 Fetching users from database...');
+        const result = await pool.query('SELECT * FROM users ORDER BY created_at DESC');
+        console.log(`✅ Found ${result.rows.length} users:`, result.rows);
+        res.json(result.rows);
+    } catch (err) {
+        console.error('❌ Error fetching users:', err);
+        res.status(500).json({ error: 'Failed to fetch users' });
+    }
 });
 
-app.post('/api/users', (req, res) => {
-    // Example POST endpoint
+app.post('/api/users', async (req, res) => {
     const { name, email } = req.body;
     
     if (!name || !email) {
         return res.status(400).json({ error: 'Name and email are required' });
     }
     
-    // In a real app, you'd save to a database
-    const newUser = {
-        id: Date.now(),
-        name,
-        email
-    };
-    
-    res.status(201).json(newUser);
+    try {
+        console.log(`➕ Creating new user: ${name} (${email})`);
+        const result = await pool.query(
+            'INSERT INTO users (name, email) VALUES ($1, $2) RETURNING *',
+            [name, email]
+        );
+        console.log('✅ User created successfully:', result.rows[0]);
+        res.status(201).json(result.rows[0]);
+    } catch (err) {
+        console.error('❌ Error creating user:', err);
+        if (err.code === '23505') { // Unique constraint violation
+            res.status(400).json({ error: 'Email already exists' });
+        } else {
+            res.status(500).json({ error: 'Failed to create user' });
+        }
+    }
 });
 
 // Error handling middleware
